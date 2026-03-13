@@ -34,7 +34,7 @@ type Click struct {
 }
 
 type GroupedClick struct {
-	Source     string    `json:"source"`
+	Sources    string    `json:"sources"` // comma-separated, e.g. "linkedin,whatsapp"
 	IPAddress  string    `json:"ip_address"`
 	UserAgent  string    `json:"user_agent"`
 	Count      int       `json:"count"`
@@ -118,10 +118,10 @@ func trackAndRedirect(source string) http.HandlerFunc {
 	}
 }
 
-// handleStats returns per-source click totals as JSON.
+// handleStats returns unique visitor counts per source as JSON.
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query(`
-		SELECT source, COUNT(*) AS count
+		SELECT source, COUNT(DISTINCT ip_address) AS count
 		FROM clicks
 		GROUP BY source
 	`)
@@ -189,18 +189,18 @@ func handleClicks(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(clicks)
 }
 
-// handleGroupedClicks returns clicks grouped by (ip_address, source) with count and time range.
+// handleGroupedClicks returns one row per unique IP with all sources they used.
 func handleGroupedClicks(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query(`
 		SELECT
-			source,
 			ip_address,
-			MAX(user_agent)  AS user_agent,
-			COUNT(*)         AS count,
-			MIN(created_at)  AS first_click,
-			MAX(created_at)  AS last_click
+			STRING_AGG(DISTINCT source, ',') AS sources,
+			MAX(user_agent)                  AS user_agent,
+			COUNT(*)                         AS count,
+			MIN(created_at)                  AS first_click,
+			MAX(created_at)                  AS last_click
 		FROM clicks
-		GROUP BY source, ip_address
+		GROUP BY ip_address
 		ORDER BY last_click DESC
 		LIMIT 200
 	`)
@@ -213,7 +213,7 @@ func handleGroupedClicks(w http.ResponseWriter, r *http.Request) {
 	grouped := []GroupedClick{}
 	for rows.Next() {
 		var g GroupedClick
-		if err := rows.Scan(&g.Source, &g.IPAddress, &g.UserAgent, &g.Count, &g.FirstClick, &g.LastClick); err == nil {
+		if err := rows.Scan(&g.IPAddress, &g.Sources, &g.UserAgent, &g.Count, &g.FirstClick, &g.LastClick); err == nil {
 			grouped = append(grouped, g)
 		}
 	}
@@ -222,21 +222,20 @@ func handleGroupedClicks(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(grouped)
 }
 
-// handleClickDetail returns all individual clicks for a given ip + source.
+// handleClickDetail returns all individual clicks for a given ip across all sources.
 func handleClickDetail(w http.ResponseWriter, r *http.Request) {
 	ip := r.URL.Query().Get("ip")
-	source := r.URL.Query().Get("source")
-	if ip == "" || source == "" {
-		http.Error(w, "ip and source query params required", http.StatusBadRequest)
+	if ip == "" {
+		http.Error(w, "ip query param required", http.StatusBadRequest)
 		return
 	}
 
 	rows, err := db.Query(`
 		SELECT id, source, ip_address, user_agent, created_at
 		FROM clicks
-		WHERE ip_address = $1 AND source = $2
+		WHERE ip_address = $1
 		ORDER BY created_at DESC
-	`, ip, source)
+	`, ip)
 	if err != nil {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
