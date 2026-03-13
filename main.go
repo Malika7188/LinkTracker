@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 	_ "time/tzdata" // embed IANA timezone database so it works in scratch/alpine images
 
@@ -79,17 +80,15 @@ func initDB() {
 	log.Println("Database connected and table ready")
 }
 
-// getClientIP extracts the real IP, honouring reverse-proxy headers.
+// getClientIP extracts the real client IP, honouring reverse-proxy headers.
 func getClientIP(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		// X-Forwarded-For may be "client, proxy1, proxy2" — take the first
-		if ip, _, err := net.SplitHostPort(fwd); err == nil {
-			return ip
-		}
-		return fwd
+		// X-Forwarded-For can be "client, proxy1, proxy2" — the first is the real client
+		first := strings.SplitN(fwd, ",", 2)[0]
+		return strings.TrimSpace(first)
 	}
 	if real := r.Header.Get("X-Real-IP"); real != "" {
-		return real
+		return strings.TrimSpace(real)
 	}
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
