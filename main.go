@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -12,9 +13,6 @@ import (
 	_ "time/tzdata" // embed IANA timezone database so it works in scratch/alpine images
 
 	_ "github.com/lib/pq"
-
-	"fmt"
-	"strings"
 )
 
 var db *sql.DB
