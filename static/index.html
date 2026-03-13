@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LinkTracker Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; color: #f8fafc; }
+    #refresh-badge {
+      background: #22c55e22;
+      color: #4ade80;
+      border: 1px solid #4ade8044;
+      border-radius: 999px;
+      padding: 0.2rem 0.75rem;
+      font-size: 0.75rem;
+    }
+
+    main { padding: 2rem; max-width: 1200px; margin: 0 auto; }
+
+    /* ---- Cards ---- */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+    }
+    .card .label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+      margin-bottom: 0.5rem;
+    }
+    .card .count { font-size: 2.5rem; font-weight: 800; line-height: 1; }
+    .card.linkedin  .count { color: #3b82f6; }
+    .card.whatsapp  .count { color: #22c55e; }
+    .card.community .count { color: #a855f7; }
+    .card.total     .count { color: #f59e0b; }
+
+    /* ---- Chart ---- */
+    .chart-box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .chart-box h2 { font-size: 1rem; font-weight: 600; color: #cbd5e1; margin-bottom: 1rem; }
+    .chart-wrap { position: relative; height: 260px; }
+
+    /* ---- Table ---- */
+    .table-box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1.5rem;
+      overflow-x: auto;
+    }
+    .table-box h2 { font-size: 1rem; font-weight: 600; color: #cbd5e1; margin-bottom: 1rem; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    thead th {
+      text-align: left;
+      padding: 0.6rem 1rem;
+      background: #0f172a;
+      color: #64748b;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    tbody tr {
+      border-top: 1px solid #263045;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    tbody tr:hover { background: #1a2740; }
+    tbody td { padding: 0.7rem 1rem; color: #cbd5e1; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+    .badge.linkedin  { background: #3b82f622; color: #60a5fa; border: 1px solid #3b82f644; }
+    .badge.whatsapp  { background: #22c55e22; color: #4ade80; border: 1px solid #22c55e44; }
+    .badge.community { background: #a855f722; color: #c084fc; border: 1px solid #a855f744; }
+
+    .click-count {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: #f59e0b22;
+      color: #fbbf24;
+      border: 1px solid #f59e0b44;
+      border-radius: 999px;
+      padding: 0.2rem 0.65rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .click-hint { font-size: 0.72rem; color: #475569; margin-left: 0.4rem; }
+
+    .ua { max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #475569; font-size: 0.78rem; }
+
+    #empty-state { text-align: center; padding: 3rem; color: #475569; }
+
+    /* ---- Modal ---- */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      backdrop-filter: blur(3px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      width: min(540px, 95vw);
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+    }
+
+    .modal-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .modal-header h3 { font-size: 1rem; font-weight: 700; color: #f1f5f9; }
+    .modal-meta { font-size: 0.78rem; color: #64748b; margin-top: 0.25rem; }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: #64748b;
+      font-size: 1.4rem;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0.1rem 0.3rem;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+      flex-shrink: 0;
+    }
+    .modal-close:hover { color: #f1f5f9; background: #334155; }
+
+    .modal-body { overflow-y: auto; padding: 1rem 1.5rem; }
+
+    .click-timeline { list-style: none; }
+    .click-timeline li {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0;
+      border-bottom: 1px solid #1e3a5f22;
+      font-size: 0.85rem;
+    }
+    .click-timeline li:last-child { border-bottom: none; }
+
+    .tl-num {
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: 50%;
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #64748b;
+      font-size: 0.7rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .tl-time { color: #e2e8f0; font-variant-numeric: tabular-nums; }
+    .tl-id { margin-left: auto; color: #334155; font-size: 0.72rem; }
+
+    .modal-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid #334155;
+      font-size: 0.78rem;
+      color: #475569;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>LinkTracker Dashboard</h1>
+  <span id="refresh-badge">Auto-refresh every 30s</span>
+</header>
+
+<main>
+
+  <!-- Summary cards -->
+  <div class="cards">
+    <div class="card linkedin">
+      <div class="label">LinkedIn</div>
+      <div class="count" id="cnt-linkedin">—</div>
+    </div>
+    <div class="card whatsapp">
+      <div class="label">WhatsApp</div>
+      <div class="count" id="cnt-whatsapp">—</div>
+    </div>
+    <div class="card community">
+      <div class="label">Community</div>
+      <div class="count" id="cnt-community">—</div>
+    </div>
+    <div class="card total">
+      <div class="label">Total Clicks</div>
+      <div class="count" id="cnt-total">—</div>
+    </div>
+  </div>
+
+  <!-- Bar chart -->
+  <div class="chart-box">
+    <h2>Clicks per Source</h2>
+    <div class="chart-wrap">
+      <canvas id="barChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Grouped clicks table -->
+  <div class="table-box">
+    <h2>Visitors <span style="color:#475569;font-weight:400;font-size:0.85rem">— click a row to see full history</span></h2>
+    <div id="empty-state" style="display:none">No clicks recorded yet.</div>
+    <table id="clicks-table" style="display:none">
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>IP Address</th>
+          <th>Clicks</th>
+          <th>First Visit (UTC+3)</th>
+          <th>Last Visit (UTC+3)</th>
+          <th>User Agent</th>
+        </tr>
+      </thead>
+      <tbody id="clicks-body"></tbody>
+    </table>
+  </div>
+
+</main>
+
+<!-- Detail modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div>
+        <h3 id="modal-title">Click History</h3>
+        <div class="modal-meta" id="modal-meta"></div>
+      </div>
+      <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <ul class="click-timeline" id="modal-list"></ul>
+    </div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<script>
+  const COLORS = {
+    linkedin:  { bg: 'rgba(59,130,246,0.7)',  border: '#3b82f6' },
+    whatsapp:  { bg: 'rgba(34,197,94,0.7)',   border: '#22c55e' },
+    community: { bg: 'rgba(168,85,247,0.7)',  border: '#a855f7' },
+  };
+
+  // --- Chart ---
+  const ctx = document.getElementById('barChart').getContext('2d');
+  const barChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['LinkedIn', 'WhatsApp', 'Community'],
+      datasets: [{
+        label: 'Clicks',
+        data: [0, 0, 0],
+        backgroundColor: [COLORS.linkedin.bg, COLORS.whatsapp.bg, COLORS.community.bg],
+        borderColor:     [COLORS.linkedin.border, COLORS.whatsapp.border, COLORS.community.border],
+        borderWidth: 2,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#1a2740' }, ticks: { color: '#94a3b8' } },
+        y: {
+          grid: { color: '#1a2740' },
+          ticks: { color: '#94a3b8', stepSize: 1, precision: 0 },
+          beginAtZero: true,
+        }
+      }
+    }
+  });
+
+  // --- Helpers ---
+  function fmt(iso) {
+    return new Date(iso).toLocaleString('en-KE', { timeZone: 'Africa/Nairobi', hour12: false }).replace(',', '');
+  }
+  function esc(str) {
+    if (!str) return '';
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // --- Stats ---
+  async function loadStats() {
+    try {
+      const stats = await fetch('/api/stats').then(r => r.json());
+      let total = 0;
+      const counts = { linkedin: 0, whatsapp: 0, community: 0 };
+      stats.forEach(s => { counts[s.source] = s.count; total += s.count; });
+      document.getElementById('cnt-linkedin').textContent  = counts.linkedin;
+      document.getElementById('cnt-whatsapp').textContent  = counts.whatsapp;
+      document.getElementById('cnt-community').textContent = counts.community;
+      document.getElementById('cnt-total').textContent     = total;
+      barChart.data.datasets[0].data = [counts.linkedin, counts.whatsapp, counts.community];
+      barChart.update();
+    } catch (e) { console.error('Stats error', e); }
+  }
+
+  // --- Grouped table ---
+  async function loadGrouped() {
+    try {
+      const data  = await fetch('/api/clicks/grouped').then(r => r.json());
+      const tbody = document.getElementById('clicks-body');
+      const empty = document.getElementById('empty-state');
+      const table = document.getElementById('clicks-table');
+
+      if (!data || data.length === 0) {
+        empty.style.display = 'block';
+        table.style.display = 'none';
+        return;
+      }
+      empty.style.display = 'none';
+      table.style.display = 'table';
+
+      tbody.innerHTML = data.map(g => `
+        <tr data-ip="${esc(g.ip_address)}" data-source="${esc(g.source)}" data-count="${g.count}">
+          <td><span class="badge ${g.source}">${g.source}</span></td>
+          <td>${esc(g.ip_address)}</td>
+          <td>
+            <span class="click-count">&#9679; ${g.count}</span>
+            ${g.count > 1 ? '<span class="click-hint">click to expand</span>' : '<span class="click-hint">click for detail</span>'}
+          </td>
+          <td>${fmt(g.first_click)}</td>
+          <td>${fmt(g.last_click)}</td>
+          <td class="ua" title="${esc(g.user_agent)}">${esc(g.user_agent)}</td>
+        </tr>
+      `).join('');
+
+      // attach row click listeners
+      tbody.querySelectorAll('tr').forEach(row => {
+        row.addEventListener('click', () => openModal(
+          row.dataset.ip,
+          row.dataset.source,
+          parseInt(row.dataset.count, 10)
+        ));
+      });
+    } catch (e) { console.error('Grouped error', e); }
+  }
+
+  // --- Modal ---
+  const overlay   = document.getElementById('modal-overlay');
+  const modalList = document.getElementById('modal-list');
+
+  function closeModal() { overlay.classList.remove('open'); }
+
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  async function openModal(ip, source, count) {
+    // Set header immediately
+    document.getElementById('modal-title').textContent = `${source.charAt(0).toUpperCase() + source.slice(1)} — ${ip}`;
+    document.getElementById('modal-meta').textContent  = `${count} click${count !== 1 ? 's' : ''} recorded`;
+    document.getElementById('modal-footer').textContent = 'All times shown in Nairobi time (UTC+3)';
+    modalList.innerHTML = '<li style="color:#475569;padding:1rem 0">Loading…</li>';
+    overlay.classList.add('open');
+
+    try {
+      const clicks = await fetch(`/api/clicks/detail?ip=${encodeURIComponent(ip)}&source=${encodeURIComponent(source)}`).then(r => r.json());
+
+      if (!clicks || clicks.length === 0) {
+        modalList.innerHTML = '<li style="color:#475569;padding:1rem 0">No records found.</li>';
+        return;
+      }
+
+      modalList.innerHTML = clicks.map((c, i) => `
+        <li>
+          <span class="tl-num">${clicks.length - i}</span>
+          <span class="tl-time">${fmt(c.created_at)}</span>
+          <span class="tl-id">#${c.id}</span>
+        </li>
+      `).join('');
+    } catch (e) {
+      modalList.innerHTML = '<li style="color:#ef4444;padding:1rem 0">Failed to load details.</li>';
+      console.error('Detail error', e);
+    }
+  }
+
+  function refresh() { loadStats(); loadGrouped(); }
+  refresh();
+  setInterval(refresh, 30_000);
+</script>
+</body>
+</html>
