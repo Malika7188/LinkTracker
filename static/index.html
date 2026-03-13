@@ -372,9 +372,12 @@
       empty.style.display = 'none';
       table.style.display = 'table';
 
-      tbody.innerHTML = data.map(g => `
-        <tr data-ip="${esc(g.ip_address)}" data-source="${esc(g.source)}" data-count="${g.count}">
-          <td><span class="badge ${g.source}">${g.source}</span></td>
+      tbody.innerHTML = data.map(g => {
+        const sources = g.sources.split(',');
+        const badges = sources.map(s => `<span class="badge ${s.trim()}">${s.trim()}</span>`).join(' ');
+        return `
+        <tr data-ip="${esc(g.ip_address)}" data-count="${g.count}">
+          <td>${badges}</td>
           <td>${esc(g.ip_address)}</td>
           <td>
             <span class="click-count">&#9679; ${g.count}</span>
@@ -383,14 +386,13 @@
           <td>${fmt(g.first_click)}</td>
           <td>${fmt(g.last_click)}</td>
           <td class="ua" title="${esc(g.user_agent)}">${esc(g.user_agent)}</td>
-        </tr>
-      `).join('');
+        </tr>`;
+      }).join('');
 
       // attach row click listeners
       tbody.querySelectorAll('tr').forEach(row => {
         row.addEventListener('click', () => openModal(
           row.dataset.ip,
-          row.dataset.source,
           parseInt(row.dataset.count, 10)
         ));
       });
@@ -407,16 +409,15 @@
   overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
-  async function openModal(ip, source, count) {
-    // Set header immediately
-    document.getElementById('modal-title').textContent = `${source.charAt(0).toUpperCase() + source.slice(1)} — ${ip}`;
+  async function openModal(ip, count) {
+    document.getElementById('modal-title').textContent = ip;
     document.getElementById('modal-meta').textContent  = `${count} click${count !== 1 ? 's' : ''} recorded`;
     document.getElementById('modal-footer').textContent = 'All times shown in Nairobi time (UTC+3)';
     modalList.innerHTML = '<li style="color:#475569;padding:1rem 0">Loading…</li>';
     overlay.classList.add('open');
 
     try {
-      const clicks = await fetch(`/api/clicks/detail?ip=${encodeURIComponent(ip)}&source=${encodeURIComponent(source)}`).then(r => r.json());
+      const clicks = await fetch(`/api/clicks/detail?ip=${encodeURIComponent(ip)}`).then(r => r.json());
 
       if (!clicks || clicks.length === 0) {
         modalList.innerHTML = '<li style="color:#475569;padding:1rem 0">No records found.</li>';
@@ -426,6 +427,7 @@
       modalList.innerHTML = clicks.map((c, i) => `
         <li>
           <span class="tl-num">${clicks.length - i}</span>
+          <span class="badge ${c.source}" style="font-size:0.68rem">${c.source}</span>
           <span class="tl-time">${fmt(c.created_at)}</span>
           <span class="tl-id">#${c.id}</span>
         </li>
