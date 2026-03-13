@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: postgres -c timezone=Africa/Nairobi
+    environment:
+      POSTGRES_DB:       linktracker
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: password
+      TZ:                Africa/Nairobi
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://postgres:password@db:5432/linktracker?sslmode=disable
+      PORT: 8080
+      TZ:           Africa/Nairobi
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
