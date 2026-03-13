@@ -95,11 +95,36 @@ func getClientIP(r *http.Request) string {
 	return ip
 }
 
+// botPatterns contains known bot/crawler/preview user agent substrings to ignore.
+var botPatterns = []string{
+	"whatsapp", "facebookexternalhit", "linkedinbot", "twitterbot",
+	"telegrambot", "slackbot", "discordbot", "bot", "crawler",
+	"spider", "preview", "google", "bing", "yahoo", "baidu",
+	"curl", "wget", "python", "java", "ruby", "go-http",
+}
+
+// isBot returns true if the user agent belongs to a bot or link preview fetcher.
+func isBot(userAgent string) bool {
+	ua := strings.ToLower(userAgent)
+	for _, pattern := range botPatterns {
+		if strings.Contains(ua, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
 // trackAndRedirect records the click then sends the user to the target URL.
 func trackAndRedirect(source string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip := getClientIP(r)
 		userAgent := r.Header.Get("User-Agent")
+
+		if isBot(userAgent) {
+			log.Printf("Bot/preview ignored: source=%s ua=%s", source, userAgent)
+			http.Redirect(w, r, redirectURLs[source], http.StatusFound)
+			return
+		}
 
 		_, err := db.Exec(
 			`INSERT INTO clicks (source, ip_address, user_agent) VALUES ($1, $2, $3)`,
