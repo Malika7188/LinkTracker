@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"os"
 	"time"
+	_ "time/tzdata" // embed IANA timezone database so it works in scratch/alpine images
 
 	_ "github.com/lib/pq"
-	_ "time/tzdata" // embed IANA timezone database so it works in scratch/alpine images
+
+	"fmt"
+	"strings"
 )
 
 var db *sql.DB
@@ -149,12 +152,25 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 
 // handleClicks returns the 100 most recent raw click records as JSON.
 func handleClicks(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query(`
-		SELECT id, source, ip_address, user_agent, created_at
-		FROM clicks
-		ORDER BY created_at DESC
-		LIMIT 100
-	`)
+	// Parse pagination parameters
+	page := 1
+	pageSize := 100
+	if p := r.URL.Query().Get("page"); p != "" {
+		fmt.Sscanf(p, "%d", &page)
+		if page < 1 {
+			page = 1
+		}
+	}
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		fmt.Sscanf(ps, "%d", &pageSize)
+		if pageSize < 1 {
+			pageSize = 100
+		}
+	}
+	offset := (page - 1) * pageSize
+
+	query := `SELECT id, source, ip_address, user_agent, created_at FROM clicks ORDER BY created_at DESC LIMIT $1 OFFSET $2`
+	rows, err := db.Query(query, pageSize, offset)
 	if err != nil {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
@@ -238,6 +254,34 @@ func handleClickDetail(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(clicks)
 }
 
+// handleExportClicksCSV streams all click records as CSV.
+func handleExportClicksCSV(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query(`SELECT id, source, ip_address, user_agent, created_at FROM clicks ORDER BY created_at DESC`)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=clicks.csv")
+
+	// Write CSV header
+	w.Write([]byte("id,source,ip_address,user_agent,created_at\n"))
+
+	for rows.Next() {
+		var c Click
+		if err := rows.Scan(&c.ID, &c.Source, &c.IPAddress, &c.UserAgent, &c.CreatedAt); err == nil {
+			// Escape commas and quotes in user_agent
+			userAgent := c.UserAgent
+			userAgent = strings.ReplaceAll(userAgent, "\"", "\"\"")
+			userAgent = strings.ReplaceAll(userAgent, ",", " ")
+			line := fmt.Sprintf("%d,%s,%s,\"%s\",%s\n", c.ID, c.Source, c.IPAddress, userAgent, c.CreatedAt.Format(time.RFC3339))
+			w.Write([]byte(line))
+		}
+	}
+}
+
 func main() {
 	loc, err := time.LoadLocation("Africa/Nairobi")
 	if err != nil {
@@ -259,6 +303,7 @@ func main() {
 	mux.HandleFunc("/api/clicks", handleClicks)
 	mux.HandleFunc("/api/clicks/grouped", handleGroupedClicks)
 	mux.HandleFunc("/api/clicks/detail", handleClickDetail)
+	mux.HandleFunc("/api/clicks/export", handleExportClicksCSV)
 
 	// Serve the dashboard frontend
 	mux.Handle("/", http.FileServer(http.Dir("./static")))
