@@ -276,10 +276,11 @@ func handleClickDetail(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(clicks)
 }
 
-// handleExportClicksCSV exports one row per unique IP with click count and channel(s).
+// handleExportClicksCSV exports one row per unique IP with clean sequential numbering.
 func handleExportClicksCSV(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query(`
 		SELECT
+			ROW_NUMBER() OVER (ORDER BY MAX(created_at) DESC) AS no,
 			ip_address,
 			STRING_AGG(DISTINCT source, ' | ') AS sources,
 			COUNT(*)                            AS total_clicks,
@@ -299,15 +300,16 @@ func handleExportClicksCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=linktracker_visitors.csv")
 
-	w.Write([]byte("ip_address,channels,total_clicks,first_click,last_click,user_agent\n"))
+	w.Write([]byte("no,ip_address,channels,total_clicks,first_click,last_click,user_agent\n"))
 
 	for rows.Next() {
+		var no, totalClicks int
 		var ip, sources, userAgent string
-		var totalClicks int
 		var firstClick, lastClick time.Time
-		if err := rows.Scan(&ip, &sources, &totalClicks, &firstClick, &lastClick, &userAgent); err == nil {
-			userAgent = strings.ReplaceAll(userAgent, `"`, `""`) // escape quotes
-			fmt.Fprintf(w, "%s,%s,%d,%s,%s,\"%s\"\n",
+		if err := rows.Scan(&no, &ip, &sources, &totalClicks, &firstClick, &lastClick, &userAgent); err == nil {
+			userAgent = strings.ReplaceAll(userAgent, `"`, `""`)
+			fmt.Fprintf(w, "%d,%s,%s,%d,%s,%s,\"%s\"\n",
+				no,
 				ip,
 				sources,
 				totalClicks,
