@@ -275,6 +275,30 @@
     </table>
   </div>
 
+  <!-- All clicks paginated table -->
+  <div class="table-box" style="margin-top:2rem">
+    <h2>All Transactions</h2>
+    <button id="export-csv-btn" style="margin-bottom:1rem;padding:0.5rem 1.2rem;border-radius:6px;background:#3b82f6;color:#fff;border:none;cursor:pointer;font-size:1rem;font-weight:600">Export CSV</button>
+    <div id="all-clicks-empty" style="display:none">No transactions found.</div>
+    <table id="all-clicks-table" style="display:none">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Source</th>
+          <th>IP Address</th>
+          <th>User Agent</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody id="all-clicks-body"></tbody>
+    </table>
+    <div id="pagination-controls" style="margin-top:1rem;display:flex;gap:1rem;align-items:center">
+      <button id="prev-page" style="padding:0.4rem 1rem;border-radius:6px;background:#334155;color:#e2e8f0;border:none;cursor:pointer">Prev</button>
+      <span id="page-info" style="font-size:0.9rem"></span>
+      <button id="next-page" style="padding:0.4rem 1rem;border-radius:6px;background:#334155;color:#e2e8f0;border:none;cursor:pointer">Next</button>
+    </div>
+  </div>
+
 </main>
 
 <!-- Detail modal -->
@@ -439,6 +463,81 @@
   function refresh() { loadStats(); loadGrouped(); }
   refresh();
   setInterval(refresh, 30_000);
+
+  // --- All Clicks Paginated Table ---
+  let currentPage = 1;
+  const pageSize = 100;
+  let lastPage = false;
+
+  async function loadAllClicks(page = 1) {
+    try {
+      const res = await fetch(`/api/clicks?page=${page}&page_size=${pageSize}`);
+      const data = await res.json();
+      const tbody = document.getElementById('all-clicks-body');
+      const empty = document.getElementById('all-clicks-empty');
+      const table = document.getElementById('all-clicks-table');
+      const pageInfo = document.getElementById('page-info');
+      lastPage = data.length < pageSize;
+
+      if (!data || data.length === 0) {
+        empty.style.display = 'block';
+        table.style.display = 'none';
+        pageInfo.textContent = `Page ${page}`;
+        return;
+      }
+      empty.style.display = 'none';
+      table.style.display = 'table';
+      pageInfo.textContent = `Page ${page}`;
+
+      tbody.innerHTML = data.map(c => `
+        <tr>
+          <td>${c.id}</td>
+          <td><span class="badge ${esc(c.source)}">${esc(c.source)}</span></td>
+          <td>${esc(c.ip_address)}</td>
+          <td class="ua" title="${esc(c.user_agent)}">${esc(c.user_agent)}</td>
+          <td>${fmt(c.created_at)}</td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      console.error('All clicks error', e);
+    }
+  }
+
+  function updatePaginationControls() {
+    document.getElementById('prev-page').disabled = currentPage === 1;
+    document.getElementById('next-page').disabled = lastPage;
+  }
+
+  // Pagination button listeners
+  document.getElementById('prev-page').addEventListener('click', () => {
+    if (currentPage > 1) {
+      currentPage--;
+      loadAllClicks(currentPage);
+      updatePaginationControls();
+    }
+  });
+  document.getElementById('next-page').addEventListener('click', () => {
+    if (!lastPage) {
+      currentPage++;
+      loadAllClicks(currentPage);
+      updatePaginationControls();
+    }
+  });
+
+  // Initial load
+  loadAllClicks(currentPage);
+  updatePaginationControls();
+
+  // Optionally, refresh all clicks table every 30s
+  setInterval(() => {
+    loadAllClicks(currentPage);
+  }, 30000);
+
+  // Export CSV button handler
+  document.getElementById('export-csv-btn').addEventListener('click', function() {
+    window.location.href = '/api/clicks/export';
+  });
+
 </script>
 </body>
 </html>
