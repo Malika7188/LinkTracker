@@ -251,9 +251,20 @@ func handleClickDetail(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(clicks)
 }
 
-// handleExportClicksCSV streams all click records as CSV.
+// handleExportClicksCSV exports one row per unique IP with click count and channel(s).
 func handleExportClicksCSV(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query(`SELECT id, source, ip_address, user_agent, created_at FROM clicks ORDER BY created_at DESC`)
+	rows, err := db.Query(`
+		SELECT
+			ip_address,
+			STRING_AGG(DISTINCT source, ' | ') AS sources,
+			COUNT(*)                            AS total_clicks,
+			MIN(created_at)                     AS first_click,
+			MAX(created_at)                     AS last_click,
+			MAX(user_agent)                     AS user_agent
+		FROM clicks
+		GROUP BY ip_address
+		ORDER BY last_click DESC
+	`)
 	if err != nil {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
@@ -261,20 +272,24 @@ func handleExportClicksCSV(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment; filename=clicks.csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=linktracker_visitors.csv")
 
-	// Write CSV header
-	w.Write([]byte("id,source,ip_address,user_agent,created_at\n"))
+	w.Write([]byte("ip_address,channels,total_clicks,first_click,last_click,user_agent\n"))
 
 	for rows.Next() {
-		var c Click
-		if err := rows.Scan(&c.ID, &c.Source, &c.IPAddress, &c.UserAgent, &c.CreatedAt); err == nil {
-			// Escape commas and quotes in user_agent
-			userAgent := c.UserAgent
-			userAgent = strings.ReplaceAll(userAgent, "\"", "\"\"")
-			userAgent = strings.ReplaceAll(userAgent, ",", " ")
-			line := fmt.Sprintf("%d,%s,%s,\"%s\",%s\n", c.ID, c.Source, c.IPAddress, userAgent, c.CreatedAt.Format(time.RFC3339))
-			w.Write([]byte(line))
+		var ip, sources, userAgent string
+		var totalClicks int
+		var firstClick, lastClick time.Time
+		if err := rows.Scan(&ip, &sources, &totalClicks, &firstClick, &lastClick, &userAgent); err == nil {
+			userAgent = strings.ReplaceAll(userAgent, `"`, `""`) // escape quotes
+			fmt.Fprintf(w, "%s,%s,%d,%s,%s,\"%s\"\n",
+				ip,
+				sources,
+				totalClicks,
+				firstClick.Format("2006-01-02 15:04:05"),
+				lastClick.Format("2006-01-02 15:04:05"),
+				userAgent,
+			)
 		}
 	}
 }
